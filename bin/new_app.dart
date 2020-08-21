@@ -1,59 +1,72 @@
+import 'dart:io';
+import 'dart:convert';
 import 'package:mongo_dart/mongo_dart.dart';
 
 void main(List<String> arguments) async {
+  int port = 3000;
+  var server = await HttpServer.bind('localhost', port);
+
   Db db = new Db('mongodb://localhost:27017/test');
 
   await db.open();
 
   // Access a collection
-  var coll = db.collection('people');
+  DbCollection coll = db.collection('people');
 
-  // Read people
-  var people = await coll.find().toList();
-  print(people);
+  server.listen((HttpRequest req) async {
+    var content = await req.cast<List<int>>().transform(Utf8Decoder()).join();
+    var document = json.decode(content);
+    var people = await coll.find().toList();
+    switch (req.uri.path) {
+      case '/':
+        req.response
+          ..write('Hello world')
+          ..close();
+        break;
+      case '/people':
+        // Handle GET request
+        if (req.method == 'GET') {
+          req.response.write(people);
+        }
+        // Handle POST request
+        else if (req.method == 'POST') {
+          await coll.save(document);
+        }
+        // Handle PUT request
+        else if (req.method == 'PUT') {
+          var id = int.parse(req.uri.queryParameters['id']);
+          var itemToReplace = await coll.findOne(where.eq('id', id));
 
-  var people1 = await coll.find(where.limit(5)).toList();
-  print(people1);
-
-  //Search for a person in the database
-  var person = await coll.find(where.eq('first_name', 'Bruna'));
-  print(person);
-
-  var person1 = await coll.findOne(where.match('first_name', 'B'));
-  print(person1);
-
-  var person2 = await coll
-      // .findOne(where.match('first_name', 'B').and(where.gt('id', 6)));
-      // .findOne(where.match('first_name', 'B').gt('id', 6));
-      .findOne(where.jsQuery('''
-      return this.first_name.startsWith('B') && this.id > 6;
-  '''));
-  print(person2);
-
-  // Create person
-
-  await coll.save({
-    'id': 12,
-    'first_name': 'Evandro',
-    'last_name': 'Barbosa',
-    'email': 'evandro@gmail.com',
-    'gender': 'Male'
+          if (itemToReplace == null) {
+            await coll.save(document);
+          } else {
+            await coll.update(itemToReplace, document);
+          }
+        }
+        // Handle DELETE request
+        else if (req.method == 'DELETE') {
+          var id = int.parse(req.uri.queryParameters['id']);
+          var itemToDelete = await coll.findOne(where.eq('id', id));
+          await coll.remove(itemToDelete);
+          print('Item removido com sucesso');
+        }
+        // Handle PATCH request
+        else if (req.method == 'PATCH') {
+          var id = int.parse(req.uri.queryParameters['id']);
+          var itemToPatch = await coll.findOne(where.eq('id', id));
+          await coll.update(itemToPatch, {
+            r'$set': document,
+          });
+        }
+        await req.response.close();
+        break;
+      default:
+        req.response
+          ..statusCode = HttpStatus.notFound
+          ..write('Not found 403');
+        await req.response.close();
+    }
   });
 
-  print('Saved new person');
-
-  // Update person
-  await coll.update(await coll.findOne(where.eq('id', 1)), {
-    r'$set': {'gender': 'Female'}
-  });
-
-  print('Updated person');
-  print(await coll.findOne(where.eq('id', 8)));
-
-  // Delete person
-  await coll.remove(await coll.findOne(where.eq('id', 8)));
-
-  print('Delete pernso  ${await coll.findOne(where.eq('id', 8))}');
-
-  await db.close();
+  print('Server linstening at http://localhost:$port');
 }
