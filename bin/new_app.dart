@@ -1,6 +1,4 @@
-import 'dart:io';
-import 'dart:convert';
-import 'package:mongo_dart/mongo_dart.dart';
+import 'package:new_app/people_channel.dart';
 
 void main(List<String> arguments) async {
   int port = 3000;
@@ -13,58 +11,24 @@ void main(List<String> arguments) async {
   // Access a collection
   DbCollection coll = db.collection('people');
 
-  server.listen((HttpRequest req) async {
-    var content = await req.cast<List<int>>().transform(Utf8Decoder()).join();
-    var document = json.decode(content);
+  server.transform(HttpBodyHandler()).listen((HttpRequestBody reqBody) async {
+    // var content =
+    //     await reqBody.request.cast<dart_mongoList<int>>().transform(Utf8Decoder()).join();
+    // var document = json.decode(content);
     var people = await coll.find().toList();
-    switch (req.uri.path) {
+    switch (reqBody.request.uri.path) {
       case '/':
-        req.response
-          ..write('Hello world')
-          ..close();
+        reqBody.request.response.write('Hello world');
+        await reqBody.request.response.close();
         break;
       case '/people':
-        // Handle GET request
-        if (req.method == 'GET') {
-          req.response.write(people);
-        }
-        // Handle POST request
-        else if (req.method == 'POST') {
-          await coll.save(document);
-        }
-        // Handle PUT request
-        else if (req.method == 'PUT') {
-          var id = int.parse(req.uri.queryParameters['id']);
-          var itemToReplace = await coll.findOne(where.eq('id', id));
-
-          if (itemToReplace == null) {
-            await coll.save(document);
-          } else {
-            await coll.update(itemToReplace, document);
-          }
-        }
-        // Handle DELETE request
-        else if (req.method == 'DELETE') {
-          var id = int.parse(req.uri.queryParameters['id']);
-          var itemToDelete = await coll.findOne(where.eq('id', id));
-          await coll.remove(itemToDelete);
-          print('Item removido com sucesso');
-        }
-        // Handle PATCH request
-        else if (req.method == 'PATCH') {
-          var id = int.parse(req.uri.queryParameters['id']);
-          var itemToPatch = await coll.findOne(where.eq('id', id));
-          await coll.update(itemToPatch, {
-            r'$set': document,
-          });
-        }
-        await req.response.close();
+        PeopleController(reqBody, db);
         break;
       default:
-        req.response
+        reqBody.request.response
           ..statusCode = HttpStatus.notFound
-          ..write('Not found 403');
-        await req.response.close();
+          ..write('Not found 404');
+        await reqBody.request.response.close();
     }
   });
 
